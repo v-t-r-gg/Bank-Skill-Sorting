@@ -519,9 +519,9 @@ public final class SkillBankData
 
 	private static void addMelee(Map<String, List<Integer>> m)
 	{
-		// MELEE — 1683 items
+		// MELEE — 1688 items
 		//   Weapons (396), Shields & defenders (175), Head (253), Body (129), Legs
-		//   (142), Hands (47), Feet (49), Capes (15), Neck (40), Rings (25), Ammo
+		//   (142), Hands (47), Feet (49), Capes (15), Neck (45), Rings (25), Ammo
 		//   slot (2), Food (71), Potions (183), Training & utility (156)
 		m.put(TAG_MELEE, Arrays.asList(
 			// === Weapons ===
@@ -695,9 +695,16 @@ public final class SkillBankData
 			33063, 9747, 9753, 13329, 9768, 21285, 9750,
 
 			// === Neck ===
+			// Amulet of glory: untrimmed 0/1/2/3/4/5/6 (1704, 1706, 1708, 1710,
+			// 1712, 11976, 11978) and trimmed t/t1/t2/t3/t4/t5/t6 (10362, 10360,
+			// 10358, 10356, 10354, 11966, 11964) are each separate item ids and
+			// must all be listed explicitly — the variation-mapping family shares
+			// base 1704 across the whole set, so relying on base-expansion for
+			// tagging under-tags the trimmed variants.
 			22111, 1478, 22557, 24780, 1729, 23309, 19707, 6585,
-			23640, 12436, 1704, 20586, 10362, 10354, 1706, 1708,
-			1710, 1712, 11976, 11978, 1731, 20585, 23354, 29801,
+			23640, 12436, 1704, 20586, 10362, 10360, 10358, 10356,
+			10354, 11966, 11964, 1706, 1708, 1710, 1712, 11976,
+			11978, 1731, 20585, 23354, 29801,
 			29804, 1725, 12851, 30376, 27173, 11128, 23240, 11090,
 			4081, 10588, 12018, 12017, 10364, 19553, 20366, 22986,
 
@@ -793,11 +800,11 @@ public final class SkillBankData
 
 	private static void addRange(Map<String, List<Integer>> m)
 	{
-		// RANGE — 854 items
+		// RANGE — 859 items
 		//   Bows (66), Arrows (43), Crossbows (26), Bolts (61), Ballistae &
 		//   javelins (15), Blowpipe & darts (16), Knives (10), Morrigan's javelins
 		//   (3), Other throwables (31), Head (71), Body (72), Legs (74), Hands
-		//   (47), Feet (17), Capes (16), Shields & off-hands (29), Neck (30),
+		//   (47), Feet (17), Capes (16), Shields & off-hands (29), Neck (35),
 		//   Rings (9), Food (57), Potions (95), Training & utility (66)
 		m.put(TAG_RANGE, Arrays.asList(
 			// === Bows ===
@@ -914,9 +921,13 @@ public final class SkillBankData
 			23203, 23188, 23191, 23194, 21000,
 
 			// === Neck ===
+			// See melee Neck comment: every glory charge (untrimmed and trimmed)
+			// is a distinct item id; the whole family maps to base 1704, so the
+			// trimmed variants must be listed here explicitly to be tagged.
 			22111, 1478, 22557, 1729, 19707, 6585, 23640, 12436,
-			1704, 20586, 10362, 10354, 1706, 1708, 1710, 1712,
-			11976, 11978, 1731, 20585, 23354, 12851, 27172, 33639,
+			1704, 20586, 10362, 10360, 10358, 10356, 10354, 11966,
+			11964, 1706, 1708, 1710, 1712, 11976, 11978, 1731,
+			20585, 23354, 12851, 27172, 33639,
 			11090, 12018, 12017, 19547, 22249, 22986,
 
 			// === Rings ===
@@ -975,9 +986,9 @@ public final class SkillBankData
 
 	private static void addMage(Map<String, List<Integer>> m)
 	{
-		// MAGE — 875 items
+		// MAGE — 880 items
 		//   Runes (39), Weapons (150), Off-hands, books & tomes (54), Head (90),
-		//   Body (62), Legs (60), Hands (29), Feet (21), Capes (24), Neck (34),
+		//   Body (62), Legs (60), Hands (29), Feet (21), Capes (24), Neck (39),
 		//   Rings (15), Spell utility & supplies (119), Food (57), Potions (108),
 		//   Enchanting & skilling magic (13)
 		m.put(TAG_MAGE, Arrays.asList(
@@ -1069,9 +1080,13 @@ public final class SkillBankData
 			9101, 13335, 21784, 21776, 21780, 9762, 13331, 13333,
 
 			// === Neck ===
+			// See melee Neck comment: every glory charge (untrimmed and trimmed)
+			// is a distinct item id; the whole family maps to base 1704, so the
+			// trimmed variants must be listed here explicitly to be tagged.
 			22111, 1478, 22557, 1729, 19707, 6585, 23640, 12436,
-			1704, 20586, 10362, 10354, 1706, 1708, 1710, 1712,
-			11976, 11978, 1727, 10366, 1731, 20585, 23354, 12851,
+			1704, 20586, 10362, 10360, 10358, 10356, 10354, 11966,
+			11964, 1706, 1708, 1710, 1712, 11976, 11978, 1727,
+			10366, 1731, 20585, 23354, 12851,
 			29486, 9102, 11090, 12018, 12017, 10344, 12002, 23654,
 			19720, 22986,
 
@@ -1245,8 +1260,8 @@ public final class SkillBankData
 
 	private static void addTeleports(Map<String, List<Integer>> m)
 	{
-		// TELEPORTS — 268 items
-		//   Teleport runes (14), Mounted & charged jewellery (77), Spellbook
+		// TELEPORTS — 273 items
+		//   Teleport runes (14), Mounted & charged jewellery (82), Spellbook
 		//   tablets (31), Teleport scrolls (34), Diary & reward teleports (41),
 		//   Skill destinations (9), Wilderness teleports (8), Quest-locked
 		//   teleports (31), Special & one-time (23)
@@ -1256,7 +1271,11 @@ public final class SkillBankData
 			563, 11695, 566, 11698, 555, 11687,
 
 			// === Mounted & charged jewellery ===
-			19707, 10362, 10354, 1706, 1708, 1710, 1712, 11976,
+			// Amulet of glory trimmed variants share variation base 1704 with
+			// the untrimmed set, so every t/t1..t6 charge id is listed here
+			// explicitly — see melee Neck for the full comment.
+			19707, 10362, 10360, 10358, 10356, 10354, 11966, 11964,
+			1706, 1708, 1710, 1712, 11976,
 			11978, 26914, 21175, 21173, 21171, 21166, 11126, 11124,
 			11122, 11120, 11118, 11974, 11972, 11190, 11191, 11192,
 			11194, 22400, 3867, 3865, 3863, 3859, 3857, 3855,
@@ -1972,10 +1991,10 @@ public final class SkillBankData
 
 	private static void addSlayer(Map<String, List<Integer>> m)
 	{
-		// SLAYER — 628 items
+		// SLAYER — 635 items
 		//   Slayer assignment items (19), Mandatory task items (42), Core slayer
 		//   gear (108), Cannon & burst supplies (22), Combat potions (84), Prayer
-		//   & restores (18), Food (32), Teleports (35), Loot management (10),
+		//   & restores (18), Food (32), Teleports (42), Loot management (10),
 		//   Monster heads & trophies (35), Boss drops & upgrade parts (35), Misc
 		//   utility (188)
 		m.put(TAG_SLAYER, Arrays.asList(
@@ -2038,7 +2057,13 @@ public final class SkillBankData
 			2255, 333, 7060, 1885, 2195, 7208, 2253, 2191,
 
 			// === Teleports ===
-			1706, 1708, 1710, 1712, 11978, 21175, 21173, 21171,
+			// Amulet of glory trimmed variants share variation base 1704 with
+			// the untrimmed set, so every charged t1..t6 id is listed here
+			// explicitly — see melee Neck for the full comment. Uncharged (1704
+			// and 10362) omitted because they have no teleport charges.
+			10360, 10358, 10356, 10354, 11966, 11964,
+			1706, 1708, 1710, 1712, 11976, 11978, 21175, 21173,
+			21171,
 			21166, 11126, 11124, 11122, 11120, 11118, 11974, 11972,
 			21155, 21153, 21151, 21146, 2566, 2564, 2562, 2558,
 			2556, 2554, 2552, 11113, 11111, 11109, 11107, 11970,
