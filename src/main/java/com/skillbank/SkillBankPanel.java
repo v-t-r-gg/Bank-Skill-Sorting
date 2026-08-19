@@ -25,7 +25,6 @@ class SkillBankPanel extends PluginPanel
 	private final JCheckBox confirmResetBox;
 	private final JPanel content;
 	private final JLabel dependencyBanner;
-	private final JButton namingButton;
 
 	SkillBankPanel(SkillBankPlugin plugin)
 	{
@@ -71,19 +70,6 @@ class SkillBankPanel extends PluginPanel
 		content.add(help);
 
 		content.add(createSpacer(10));
-
-		// Brief #91: one-time opt-in to the "(auto)" naming scheme. Visible
-		// only while on the legacy (bare title-case) scheme; hides for good
-		// once switched.
-		namingButton = new JButton("Update naming scheme");
-		namingButton.setToolTipText(
-			"Rename your tabs to the current \"(auto)\" scheme (one-time, no undo)");
-		namingButton.setAlignmentX(LEFT_ALIGNMENT);
-		namingButton.addActionListener(e -> plugin.triggerUpdateNamingScheme());
-		namingButton.setVisible(plugin.isLegacyNamingScheme());
-		content.add(namingButton);
-
-		content.add(createSpacer(6));
 
 		JButton seedButton = new JButton("Seed missing tags");
 		seedButton.setAlignmentX(LEFT_ALIGNMENT);
@@ -218,13 +204,6 @@ class SkillBankPanel extends PluginPanel
 	{
 		plugin.requestTagPresence(this::applyTagPresence);
 		updateDependencyBanner();
-		refreshNamingButton();
-	}
-
-	/** Brief #91: show "Update naming scheme" only while on the legacy scheme. */
-	void refreshNamingButton()
-	{
-		SwingUtilities.invokeLater(() -> namingButton.setVisible(plugin.isLegacyNamingScheme()));
 	}
 
 	@Override

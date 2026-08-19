@@ -332,45 +332,49 @@ public class SkillBankPlugin extends Plugin
 	}
 
 	/**
-	 * Brief #90: route the once-per-session startup seed by install state.
+	 * Once-per-session startup seed. Every install ends up on the "(auto)"
+	 * suffix scheme so plugin tabs can never share a bare name with a
+	 * user-created tag (fixes issue #6 — a user's "herb" run tag having
+	 * herblore items leak into its bank-tag layout when the plugin managed
+	 * a bare "herblore" tab):
 	 * <ul>
-	 *   <li><b>already on the new scheme</b> ({@code namingMigrated}) — normal
-	 *       seed/refresh via {@link #doSeedMissing};</li>
-	 *   <li><b>legacy install</b> (fingerprint tabs present) — one-time rename
-	 *       of the old lowercase tabs to title case, no wizard;</li>
-	 *   <li><b>new install</b> — seed with the "(Auto)" naming scheme; the
-	 *       Brief #89 wizard handles any (unlikely) collisions.</li>
+	 *   <li><b>legacy install</b> (fingerprint tabs present) — first move
+	 *       lowercase ids to title case, then fall through to the (auto)
+	 *       migration;</li>
+	 *   <li><b>previously title-case-migrated install</b> — migrate straight
+	 *       to (auto) via {@link #doUpdateNamingScheme};</li>
+	 *   <li><b>new install</b> — flip the auto-naming flag on and seed;
+	 *       the Brief #89 wizard handles any (unlikely) collisions.</li>
 	 * </ul>
 	 * Runs on the client thread.
 	 */
 	private void runStartupSeed()
 	{
+		// Step 1: legacy install → rename lowercase ids to title case first
+		// so the (auto) migration in step 2 has valid title-case source keys
+		// (e.g. "woodcutting_firemaking" → "woodcutting + firemaking").
 		if (!config.namingMigrated() && isLegacyInstall())
 		{
-			int migrated = doNamingMigration();
+			doNamingMigration();
 			configManager.setConfiguration(SkillBankConfig.GROUP, AUTO_NAMING_KEY, false);
 			configManager.setConfiguration(SkillBankConfig.GROUP, NAMING_MIGRATED_KEY, true);
 			needsInitialLayout = true;
-			String summary = "renamed " + migrated + " tab(s) to title case.";
-			if (config.announceInChat())
-			{
-				postChat("Auto Bank Sorter: " + summary);
-			}
-			if (panel != null)
-			{
-				SwingUtilities.invokeLater(() ->
-				{
-					panel.setStatus(summary);
-					panel.refresh();
-				});
-			}
-			return;
+		}
+
+		// Step 2: any install still on bare title case → migrate to (auto).
+		// Covers freshly-migrated legacy installs (step 1 above) AND installs
+		// that migrated in the previous release cycle but never opted in.
+		if (config.namingMigrated() && !config.autoNaming())
+		{
+			doUpdateNamingScheme();
+			needsInitialLayout = true;
 		}
 
 		boolean newInstall = !config.namingMigrated();
 		if (newInstall)
 		{
-			// Fresh install: seed under the "(Auto)" suffix scheme.
+			// Fresh install: flip auto-naming on so the seed below writes
+			// under the "(auto)" scheme.
 			configManager.setConfiguration(SkillBankConfig.GROUP, AUTO_NAMING_KEY, true);
 		}
 		seedMissing(result ->
@@ -1446,16 +1450,19 @@ public class SkillBankPlugin extends Plugin
 		return Text.standardize(autoDisplay(internal));
 	}
 
-	/** This install's default seed label for a tab (scheme-dependent). */
+	/** Default seed label for a tab. Always the "(Auto)" variant — the
+	 *  bare title-case form is only reachable transiently during the legacy
+	 *  → (auto) migration in {@link #runStartupSeed}; runtime seeds always
+	 *  land under the (auto) name so they can't collide with a user tag. */
 	private String primaryDisplay(String internal)
 	{
-		return config.autoNaming() ? autoDisplay(internal) : titleDisplay(internal);
+		return autoDisplay(internal);
 	}
 
-	/** This install's default seed op key for a tab (scheme-dependent). */
+	/** Default seed op key for a tab — always the "(auto)" variant. */
 	private String primaryOp(String internal)
 	{
-		return config.autoNaming() ? autoOp(internal) : titleOp(internal);
+		return autoOp(internal);
 	}
 
 	// ---- Brief #90: legacy lowercase -> title-case migration ----
@@ -1626,7 +1633,6 @@ public class SkillBankPlugin extends Plugin
 			SwingUtilities.invokeLater(() ->
 			{
 				panel.setStatus(summary);
-				panel.refreshNamingButton();
 				panel.refresh();
 			});
 		}
@@ -1766,36 +1772,6 @@ public class SkillBankPlugin extends Plugin
 			SwingUtilities.invokeLater(
 				() -> panel.setStatus("Tab decisions cleared. Log in to re-check."));
 		}
-	}
-
-	/** Brief #91: true while this install is on the legacy bare title-case
-	 *  naming and can opt into the "(auto)" scheme. Drives the panel button. */
-	boolean isLegacyNamingScheme()
-	{
-		return config.namingMigrated() && !config.autoNaming();
-	}
-
-	/**
-	 * Brief #91: one-time opt-in upgrade. Renames every managed tab to its
-	 * "(auto)" variant and flips the install onto the auto naming scheme. No
-	 * confirmation, no reverse path. No-op if already on auto naming.
-	 */
-	void triggerUpdateNamingScheme()
-	{
-		if (config.autoNaming())
-		{
-			return;
-		}
-		if (client.getGameState() != GameState.LOGGED_IN)
-		{
-			if (panel != null)
-			{
-				SwingUtilities.invokeLater(
-					() -> panel.setStatus("Log in first to update the naming scheme."));
-			}
-			return;
-		}
-		clientThread.invokeLater(this::doUpdateNamingScheme);
 	}
 
 	/**
