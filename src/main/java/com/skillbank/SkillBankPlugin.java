@@ -25,6 +25,7 @@ import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
 import net.runelite.api.events.ItemContainerChanged;
 import net.runelite.api.events.WidgetClosed;
+import net.runelite.api.events.WidgetLoaded;
 import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.gameval.InventoryID;
 import net.runelite.client.callback.ClientThread;
@@ -132,6 +133,12 @@ public class SkillBankPlugin extends Plugin
 	 *  deposit/withdraw. */
 	private volatile boolean needsInitialLayout;
 
+	/** True only after {@link WidgetLoaded} for {@link InterfaceID#BANKMAIN}.
+	 *  Scene loads unload every interface, including a cached bank group,
+	 *  which would otherwise fire {@link #onWidgetClosed} and rebuild all
+	 *  22 layouts on the client thread (a multi-frame hitch at load lines). */
+	private boolean bankInterfaceOpen;
+
 	@Provides
 	SkillBankConfig provideConfig(ConfigManager configManager)
 	{
@@ -143,6 +150,8 @@ public class SkillBankPlugin extends Plugin
 	{
 		seedAttempted = false;
 		setupCheckRunThisSession = false;
+		bankInterfaceOpen = client.getGameState() == GameState.LOGGED_IN
+			&& client.getWidget(InterfaceID.BANKMAIN, 0) != null;
 		overlayManager.add(slayerTabOverlay);
 		panel = new SkillBankPanel(this);
 		// Dev-only Reset Setup Wizard button. RuneLiteProperties returns
@@ -294,7 +303,12 @@ public class SkillBankPlugin extends Plugin
 	@Subscribe
 	public void onGameStateChanged(GameStateChanged event)
 	{
-		if (event.getGameState() != GameState.LOGGED_IN)
+		GameState state = event.getGameState();
+		if (state == GameState.LOADING || state == GameState.HOPPING || state == GameState.LOGIN_SCREEN)
+		{
+			bankInterfaceOpen = false;
+		}
+		if (state != GameState.LOGGED_IN)
 		{
 			return;
 		}
@@ -1118,16 +1132,36 @@ public class SkillBankPlugin extends Plugin
 		tabInterface.reloadActiveTab();
 	}
 
+	@Subscribe
+	public void onWidgetLoaded(WidgetLoaded event)
+	{
+		if (event.getGroupId() == InterfaceID.BANKMAIN)
+		{
+			bankInterfaceOpen = true;
+		}
+	}
+
 	/**
 	 * When the bank closes, refresh layouts for every enabled Skill Bank tab.
 	 * The active tab is already refreshed by {@link #onItemContainerChanged};
 	 * this catches the other 21 so a tab switch on next bank-open uses the
 	 * latest sorted order.
+	 * <p>
+	 * Only run after a real bank session. Crossing a load line unloads every
+	 * interface (including a cached {@link InterfaceID#BANKMAIN} group) while
+	 * {@link GameState} is {@code LOADING}; rebuilding 22 tabs on the client
+	 * thread there is a hard hitch and the bank contents did not change.
 	 */
 	@Subscribe
 	public void onWidgetClosed(WidgetClosed event)
 	{
 		if (event.getGroupId() != InterfaceID.BANKMAIN)
+		{
+			return;
+		}
+		boolean wasOpen = bankInterfaceOpen;
+		bankInterfaceOpen = false;
+		if (!wasOpen || client.getGameState() != GameState.LOGGED_IN)
 		{
 			return;
 		}
