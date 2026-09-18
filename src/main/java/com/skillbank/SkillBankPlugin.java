@@ -4,11 +4,13 @@ import com.google.inject.Provides;
 import java.awt.Window;
 import java.awt.image.BufferedImage;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.BooleanSupplier;
@@ -134,10 +136,17 @@ public class SkillBankPlugin extends Plugin
 	private volatile boolean needsInitialLayout;
 
 	/** True only after {@link WidgetLoaded} for {@link InterfaceID#BANKMAIN}.
-	 *  Scene loads unload every interface, including a cached bank group,
-	 *  which would otherwise fire {@link #onWidgetClosed} and rebuild all
-	 *  22 layouts on the client thread (a multi-frame hitch at load lines). */
+	 *  Scene loads unload every interface, including a cached bank group. */
 	private boolean bankInterfaceOpen;
+
+	/** Tabs whose layouts need to be refreshed against current bank contents
+	 *  when next viewed. Populated when bank contents change while another tab
+	 *  is active, eliminating the multi-hundred-millisecond freeze on bank close. */
+	private final Set<String> dirtyTabs = new HashSet<>();
+
+	/** Standardized op key of the managed tab that was most recently active,
+	 *  used to detect tab switches during banking. */
+	private String lastActiveTag;
 
 	@Provides
 	SkillBankConfig provideConfig(ConfigManager configManager)
@@ -150,8 +159,10 @@ public class SkillBankPlugin extends Plugin
 	{
 		seedAttempted = false;
 		setupCheckRunThisSession = false;
+		net.runelite.api.widgets.Widget bankWidget = client.getWidget(InterfaceID.BANKMAIN, 0);
 		bankInterfaceOpen = client.getGameState() == GameState.LOGGED_IN
-			&& client.getWidget(InterfaceID.BANKMAIN, 0) != null;
+			&& bankWidget != null && !bankWidget.isHidden();
+		markAllTabsDirty();
 		overlayManager.add(slayerTabOverlay);
 		panel = new SkillBankPanel(this);
 		// Dev-only Reset Setup Wizard button. RuneLiteProperties returns
@@ -307,12 +318,14 @@ public class SkillBankPlugin extends Plugin
 		if (state == GameState.LOADING || state == GameState.HOPPING || state == GameState.LOGIN_SCREEN)
 		{
 			bankInterfaceOpen = false;
+			lastActiveTag = null;
+			pendingRebuildTag = null;
 		}
 		if (state != GameState.LOGGED_IN)
 		{
 			return;
 		}
-		if (panel != null)
+		if (panel != null && panel.isShowing())
 		{
 			panel.refresh();
 		}
@@ -875,7 +888,7 @@ public class SkillBankPlugin extends Plugin
 		// position (stale tags between seeds, task extras, user-added
 		// co-tags) is appended after the layout — otherwise Bank Tags
 		// auto-fills it into the row-padding gaps and destroys the rows.
-		appendUnpositionedTagged(layout, op, ownedByBase);
+		appendUnpositionedTagged(layout, op, dataTag, ownedByBase);
 		layoutManager.saveLayout(layout);
 	}
 
@@ -884,8 +897,10 @@ public class SkillBankPlugin extends Plugin
 
 	/** Append every owned, tagged-but-unpositioned item to the end of the
 	 *  layout (fresh row) so nothing free-floats into row gaps. Client
-	 *  thread only. */
-	private void appendUnpositionedTagged(Layout layout, String opTag,
+	 *  thread only.
+	 *  Optimized to probe only unplaced items currently in the bank, avoiding
+	 *  an expensive full-config scan of every item tag. */
+	private void appendUnpositionedTagged(Layout layout, String opTag, String dataTag,
 		Map<Integer, List<Integer>> ownedByBase)
 	{
 		int[] arr = layout.getLayout();
@@ -900,20 +915,40 @@ public class SkillBankPlugin extends Plugin
 			}
 		}
 		int pos = maxPos < 0 ? 0 : (maxPos / LAYOUT_ITEMS_PER_ROW + 1) * LAYOUT_ITEMS_PER_ROW;
-		for (Integer tagged : tagManager.getItemsForTag(opTag))
+
+		List<Integer> dataItems = SkillBankData.itemsFor(dataTag);
+		Set<Integer> dataItemSet = dataItems != null && !dataItems.isEmpty()
+			? new HashSet<>(dataItems)
+			: Collections.emptySet();
+
+		for (Map.Entry<Integer, List<Integer>> entry : ownedByBase.entrySet())
 		{
-			if (tagged == null)
+			int base = entry.getKey();
+			List<Integer> family = entry.getValue();
+			if (family == null || family.isEmpty())
 			{
 				continue;
 			}
-			int canonical = itemManager.canonicalize(tagged);
-			int base = ItemVariationMapping.map(canonical);
-			List<Integer> family = ownedByBase.get(base);
-			if (family == null)
+
+			boolean anyUnplaced = false;
+			for (int owned : family)
+			{
+				if (!placed.contains(owned))
+				{
+					anyUnplaced = true;
+					break;
+				}
+			}
+			if (!anyUnplaced)
 			{
 				continue;
 			}
-			if (canonical == base)
+
+			boolean baseTagged = dataItemSet.contains(base)
+				|| checkItemTagConfig(base, opTag)
+				|| checkItemTagConfig(-base, opTag);
+
+			if (baseTagged)
 			{
 				for (int owned : family)
 				{
@@ -923,13 +958,40 @@ public class SkillBankPlugin extends Plugin
 					}
 				}
 			}
-			else if (family.contains(canonical) && placed.add(canonical))
+			else
 			{
-				// Variant-specific tag (holiday replica, beta gear): only
-				// the exact variant counts — never the real base item.
-				layout.setItemAtPos(canonical, pos++);
+				for (int owned : family)
+				{
+					if (owned != base && !placed.contains(owned))
+					{
+						if (dataItemSet.contains(owned) || checkItemTagConfig(owned, opTag))
+						{
+							if (placed.add(owned))
+							{
+								layout.setItemAtPos(owned, pos++);
+							}
+						}
+					}
+				}
 			}
 		}
+	}
+
+	private boolean checkItemTagConfig(int id, String opTag)
+	{
+		String tagStr = configManager.getConfiguration(BANKTAGS_GROUP, ITEM_PREFIX + id);
+		if (tagStr == null || tagStr.isEmpty())
+		{
+			return false;
+		}
+		for (String tag : Text.fromCSV(tagStr.toLowerCase(Locale.ROOT)))
+		{
+			if (tag.equals(opTag))
+			{
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**
@@ -1060,6 +1122,7 @@ public class SkillBankPlugin extends Plugin
 			}
 			// else: unresolved collision pending the chooser — don't touch it.
 		}
+		dirtyTabs.clear();
 	}
 
 	/**
@@ -1078,6 +1141,16 @@ public class SkillBankPlugin extends Plugin
 	 * saved doesn't know about it yet. Deferring one tick lets every
 	 * same-tick subscriber complete before we read the bank + rebuild.
 	 */
+	private void markAllTabsDirty()
+	{
+		Set<String> renamed = readDecisionSet(RENAMED_TABS_KEY);
+		for (String internal : SkillBankData.tags().keySet())
+		{
+			String op = renamed.contains(internal) ? autoOp(internal) : primaryOp(internal);
+			dirtyTabs.add(op);
+		}
+	}
+
 	@Subscribe
 	public void onItemContainerChanged(ItemContainerChanged event)
 	{
@@ -1086,28 +1159,48 @@ public class SkillBankPlugin extends Plugin
 			return;
 		}
 		needsInitialLayout = false;
-		// Brief #85: tabInterface.isTagTabActive() returns false even when
-		// a tag tab IS active — verified in live diag (commit f10b6e8d
-		// log: "tabActive=false activeTag=melee"). Gate on getActiveTag()
-		// + the SkillBankData membership check only, matching bank-slot-
-		// sync's working pattern.
+		markAllTabsDirty();
+
 		String activeTag = tabInterface.getActiveTag();
 		if (activeTag == null || !isManagedActiveTag(activeTag))
 		{
 			return;
 		}
+		dirtyTabs.remove(Text.standardize(activeTag));
 		pendingRebuildTag = activeTag;
 	}
 
 	@Subscribe
 	public void onGameTick(GameTick event)
 	{
-		if (pendingRebuildTag == null)
+		if (pendingRebuildTag != null)
 		{
+			String tag = pendingRebuildTag;
+			pendingRebuildTag = null;
+			rebuildAndReloadActiveTab(tag);
 			return;
 		}
-		pendingRebuildTag = null;
-		rebuildAndReloadActiveTab(null);
+
+		if (bankInterfaceOpen)
+		{
+			String currentTag = tabInterface.getActiveTag();
+			if (currentTag != null && isManagedActiveTag(currentTag))
+			{
+				String op = Text.standardize(currentTag);
+				if (!op.equals(lastActiveTag))
+				{
+					lastActiveTag = op;
+					if (dirtyTabs.remove(op))
+					{
+						rebuildAndReloadActiveTab(null);
+					}
+				}
+			}
+			else
+			{
+				lastActiveTag = null;
+			}
+		}
 	}
 
 	/** Brief #81: shared deferred rebuild + reload. Re-checks the active
@@ -1115,24 +1208,16 @@ public class SkillBankPlugin extends Plugin
 	 *  the delay. */
 	private void rebuildAndReloadActiveTab(String expectedTag)
 	{
-		// Brief #85 (live diag): drop isTagTabActive() check — it returns
-		// false even when a Skill Bank tag tab is actually active. Trust
-		// getActiveTag() + the SkillBankData membership check instead.
 		String currentTag = tabInterface.getActiveTag();
 		if (currentTag == null || !isManagedActiveTag(currentTag))
 		{
 			return;
 		}
-		// If the player switched tabs between event fire and this tick,
-		// rebuild for whatever's actually visible now — not the snapshot
-		// we captured at event time.
-		log.debug("[SkillBank] Dynamic rebuild: tab={}, trigger=ItemContainerChanged", currentTag);
+		String op = Text.standardize(currentTag);
+		dirtyTabs.remove(op);
+		lastActiveTag = op;
+		log.debug("[SkillBank] Dynamic rebuild: tab={}", currentTag);
 		buildAndSaveLayout(currentTag);
-		// Brief #85: tabInterface.reloadActiveTab() is the canonical
-		// re-render path — calls openBankTag → loadLayout (re-reads
-		// config) → bankSearch.reset → layoutBank (re-renders grid).
-		// bankSearch.layoutBank() alone would re-run the script against
-		// a stale in-memory activeLayout.
 		tabInterface.reloadActiveTab();
 	}
 
@@ -1142,19 +1227,15 @@ public class SkillBankPlugin extends Plugin
 		if (event.getGroupId() == InterfaceID.BANKMAIN)
 		{
 			bankInterfaceOpen = true;
+			lastActiveTag = null;
 		}
 	}
 
 	/**
-	 * When the bank closes, refresh layouts for every enabled Skill Bank tab.
-	 * The active tab is already refreshed by {@link #onItemContainerChanged};
-	 * this catches the other 21 so a tab switch on next bank-open uses the
-	 * latest sorted order.
-	 * <p>
-	 * Only run after a real bank session. Crossing a load line unloads every
-	 * interface (including a cached {@link InterfaceID#BANKMAIN} group) while
-	 * {@link GameState} is {@code LOADING}; rebuilding 22 tabs on the client
-	 * thread there is a hard hitch and the bank contents did not change.
+	 * Reset open-state tracking on bank close.
+	 * Dirty tabs are rebuilt lazily when next viewed rather than synchronously
+	 * rebuilding all 22 layouts on close, eliminating client freezes and load-line
+	 * hitches.
 	 */
 	@Subscribe
 	public void onWidgetClosed(WidgetClosed event)
@@ -1163,13 +1244,9 @@ public class SkillBankPlugin extends Plugin
 		{
 			return;
 		}
-		boolean wasOpen = bankInterfaceOpen;
 		bankInterfaceOpen = false;
-		if (!wasOpen || client.getGameState() != GameState.LOGGED_IN)
-		{
-			return;
-		}
-		rebuildAllLayouts();
+		lastActiveTag = null;
+		pendingRebuildTag = null;
 	}
 
 	/**
@@ -1285,11 +1362,37 @@ public class SkillBankPlugin extends Plugin
 	private Map<String, Boolean> currentTagPresence()
 	{
 		Set<String> renamed = readDecisionSet(RENAMED_TABS_KEY);
+		Map<String, String> opToInternal = new HashMap<>();
 		Map<String, Boolean> out = new LinkedHashMap<>();
 		for (String internal : SkillBankData.tags().keySet())
 		{
 			String op = renamed.contains(internal) ? autoOp(internal) : primaryOp(internal);
-			out.put(internal, !tagManager.getItemsForTag(op).isEmpty());
+			opToInternal.put(op, internal);
+			out.put(internal, false);
+		}
+
+		List<String> keys = configManager.getConfigurationKeys(BANKTAGS_GROUP + "." + ITEM_PREFIX);
+		int remaining = out.size();
+		for (String key : keys)
+		{
+			String tagStr = configManager.getConfiguration(BANKTAGS_GROUP, key.substring(BANKTAGS_GROUP.length() + 1));
+			if (tagStr == null || tagStr.isEmpty())
+			{
+				continue;
+			}
+			for (String tag : Text.fromCSV(tagStr.toLowerCase(Locale.ROOT)))
+			{
+				String internal = opToInternal.get(tag);
+				if (internal != null && Boolean.FALSE.equals(out.get(internal)))
+				{
+					out.put(internal, true);
+					remaining--;
+					if (remaining == 0)
+					{
+						return out;
+					}
+				}
+			}
 		}
 		return out;
 	}
@@ -1380,8 +1483,29 @@ public class SkillBankPlugin extends Plugin
 	private boolean hasExistingTab(String base, Set<String> existingStdTabs)
 	{
 		return existingStdTabs.contains(base)
-			|| !tagManager.getItemsForTag(base).isEmpty()
+			|| hasTaggedItems(base)
 			|| layoutManager.loadLayout(base) != null;
+	}
+
+	private boolean hasTaggedItems(String opTag)
+	{
+		List<String> keys = configManager.getConfigurationKeys(BANKTAGS_GROUP + "." + ITEM_PREFIX);
+		for (String key : keys)
+		{
+			String tagStr = configManager.getConfiguration(BANKTAGS_GROUP, key.substring(BANKTAGS_GROUP.length() + 1));
+			if (tagStr == null || tagStr.isEmpty())
+			{
+				continue;
+			}
+			for (String tag : Text.fromCSV(tagStr.toLowerCase(Locale.ROOT)))
+			{
+				if (tag.equals(opTag))
+				{
+					return true;
+				}
+			}
+		}
+		return false;
 	}
 
 	/** True if the standardized active tag is one of this plugin's managed
