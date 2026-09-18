@@ -984,9 +984,9 @@ public class SkillBankPlugin extends Plugin
 		{
 			return false;
 		}
-		for (String tag : Text.fromCSV(tagStr.toLowerCase(Locale.ROOT)))
+		for (String tag : Text.fromCSV(tagStr))
 		{
-			if (tag.equals(opTag))
+			if (Text.standardize(tag).equals(opTag))
 			{
 				return true;
 			}
@@ -1380,9 +1380,9 @@ public class SkillBankPlugin extends Plugin
 			{
 				continue;
 			}
-			for (String tag : Text.fromCSV(tagStr.toLowerCase(Locale.ROOT)))
+			for (String tag : Text.fromCSV(tagStr))
 			{
-				String internal = opToInternal.get(tag);
+				String internal = opToInternal.get(Text.standardize(tag));
 				if (internal != null && Boolean.FALSE.equals(out.get(internal)))
 				{
 					out.put(internal, true);
@@ -1497,9 +1497,9 @@ public class SkillBankPlugin extends Plugin
 			{
 				continue;
 			}
-			for (String tag : Text.fromCSV(tagStr.toLowerCase(Locale.ROOT)))
+			for (String tag : Text.fromCSV(tagStr))
 			{
-				if (tag.equals(opTag))
+				if (Text.standardize(tag).equals(opTag))
 				{
 					return true;
 				}
